@@ -138,39 +138,25 @@ def show_pwd():
     else:
         test_connection_pwd.config(show='*') 
 
-def check_data_before_modifying(env, sql, mod_type):
-    if(mod_type == "INSERT"):
-        sql = sql[0:len(sql)-2]
-        value_array = sql.split(",")
-        final_query = """Select count(*) from "{env}"."PUBLIC"."ENT_LKUP_DATA" where """.format(env = env)
-        for i in range(0,32):
-            if(i == 3 or i == 4):
-                continue
-            elif(i == 31):
-                final_query = final_query + column_headers[i] + " = " + value_array[i] + " ; "
-            else:
-                final_query = final_query + column_headers[i] + " = " + value_array[i] + " and "
-        try:
-            row = cursor.execute(final_query)
-            row = row.fetchone()[0]
-            if(row == 0):
-                return False
-            else:
-                return True  
-        except:
-            pass
-    elif(mod_type == "DELETE"):
-        final_query = sql[7:]
-        final_query = "select count(*) " + final_query
-        try:
-            row = cursor.execute(final_query)
-            row = row.fetchone()[0]
-            if(row == 0):
-                return False
-            else:
-                return True
-        except:
-            pass
+def check_data_before_modifying(env, value_array):
+    final_query = """Select count(*) from "{env}"."PUBLIC"."ENT_LKUP_DATA" where """.format(env = env)
+    for i in range(0,32):
+        if(i == 3 or i == 4):
+            continue
+        elif(i == 31):
+            final_query = final_query + column_headers[i] + " = " + "'" + value_array[i] + "'" + " ; "
+        else:
+            final_query = final_query + column_headers[i] + " = " + "'" + value_array[i] + "'" + " and "
+    try:
+        row = cursor.execute(final_query)
+        row = row.fetchone()[0]
+        if(row == 0):
+            return False
+        else:
+            return True  
+    except:
+        pass
+
 
 
 def insert_into_table(env):
@@ -179,34 +165,33 @@ def insert_into_table(env):
         file_name = os.path.basename(selected_excel_file.get())
         counter = 0
         skipped = 0
+        values = []
         wbook = load_workbook(selected_excel_file.get())
         sheet_choosed = wbook[excel_sheet_selected.get()]
         rows = sheet_choosed.max_row
         update_table_button['state'] = 'disabled'
+
         sql = """Insert into "{env}"."PUBLIC"."ENT_LKUP_DATA" ( """.format(env = env)
         for i in range(0,32):
             if(i != 31):
                 sql = sql +  column_headers[i] + ", "
             else:
-                sql = sql + column_headers[i] + " )\n values ("
+                sql = sql + column_headers[i] + " )\n values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
         
         for row in range(2,rows+1):
-            excel_data = ''
+            val = []
+
             for col in range(1,33):
                 char = get_column_letter(col)
-                if(col != 32 and (sheet_choosed[char + str(row)].value == None or sheet_choosed[char + str(row)].value == ' ' or sheet_choosed[char + str(row)].value == '' or
-                   str(sheet_choosed[char + str(row)].value).upper() == 'NULL')):
-                    excel_data = excel_data + "'NULL'" + ","
-                elif(col == 32 and (sheet_choosed[char + str(row)].value == None or sheet_choosed[char + str(row)].value == ' ' or sheet_choosed[char + str(row)].value == '' or
-                   str(sheet_choosed[char + str(row)].value).upper() == 'NULL')):
-                    excel_data = excel_data + "'NULL'" + ");" 
+                if(sheet_choosed[char + str(row)].value == None or sheet_choosed[char + str(row)].value == ' ' or sheet_choosed[char + str(row)].value == '' or
+                   str(sheet_choosed[char + str(row)].value).upper() == 'NULL'):
+                    val.append("NULL")
                 elif(col != 32):
-                    excel_data = excel_data + "'" + str(sheet_choosed[char + str(row)].value).strip() + "',"
-                else:
-                    excel_data = excel_data + ");"
-            
+                    st = str(sheet_choosed[char + str(row)].value).strip()
+                    val.append(st) 
+
             try:
-                if(check_data_before_modifying(env,excel_data,"INSERT" ) == True):
+                if(check_data_before_modifying(env,val) == True):
                     skipped = skipped + 1
                     warn = "Skipped {skipped} row. Record already exist in table".format(skipped = skipped)
                     update_table_button_error_display.config(fg= "red")
@@ -215,10 +200,9 @@ def insert_into_table(env):
                     sheet_choosed['A'+str(row)].fill = PatternFill("solid", start_color="FFFF0000")
 
                 else:
-                    cursor.execute(sql + excel_data)
-                    cnxn.commit()
+                    values.append(val)
                     counter = counter + 1
-                    txt = "Inserted {counter} rows into {env}.ENT_LKUP_DATA".format(counter = counter, env = env)
+                    txt = "Inserting {counter} rows into {env}.ENT_LKUP_DATA".format(counter = counter, env = env)
                     update_table_button_output.set(txt)
                     update_frame.update()
                     sheet_choosed['A'+str(row)].fill = PatternFill(fill_type=None,start_color="FFFFFF")
@@ -226,12 +210,7 @@ def insert_into_table(env):
                 total = skipped + counter
                 percent_complete = (float)((total/(rows-1))*100)
                 percent_complete = float("{:.2f}".format(percent_complete))
-                if(total == rows-1):
-                    msg = "Update Complete...{per}% done".format(per = percent_complete)
-                    update_table_button_percent.set(msg)
-                    update_table_button_percent_display.config( fg= "green")
-                    update_frame.update()
-                else:
+                if(total != rows-1):
                     msg = "Updating ENT_LKUP_DATA...{per}% done".format(per = percent_complete)
                     update_table_button_percent.set(msg)
                     update_table_button_percent_display.config( fg= "blue")
@@ -242,6 +221,18 @@ def insert_into_table(env):
                 wbook.save(file_name)
                 update_table_button_output.set("Error Occured. Validate your Data")
                 return
+        try:
+            if(total == rows-1):
+                msg = "Update Complete...100% done"
+                update_table_button_percent.set(msg)
+                update_table_button_percent_display.config( fg= "green")
+                update_frame.update()
+            cursor.executemany(sql, values)
+            cnxn.commit()
+            
+        except:
+            cnxn.rollback()
+            
         wbook.save(file_name)
 
     except:
@@ -253,30 +244,32 @@ def delete_from_table(env):
         file_name = os.path.basename(selected_excel_file.get())
         skipped = 0
         counter = 0
+        values = []
         wbook = load_workbook(selected_excel_file.get())
         sheet_choosed = wbook[excel_sheet_selected.get()]
         rows = sheet_choosed.max_row
         update_table_button['state'] = 'disabled'
+        sql = """Delete from "{env}"."PUBLIC"."ENT_LKUP_DATA" where
+                DATA_ORIGIN=  ? and   TGT_TBL_NM=  ? and   TGT_COL_NM=  ? and   TGT_VAL=  ? and   TGT_DESC=  ? and   UIR_TBL_NM_1=  ? and   UIR_COL_NM_1=  ? and   UIR_VAL_1=  ? and   
+                UIR_TBL_NM_2=  ? and   UIR_COL_NM_2=  ? and   UIR_VAL_2=  ? and   UIR_TBL_NM_3=  ? and   UIR_COL_NM_3=  ? and   UIR_VAL_3=  ? and   UIR_TBL_NM_4=  ? and   
+                UIR_COL_NM_4=  ? and   UIR_VAL_4=  ? and   UIR_TBL_NM_5=  ? and   UIR_COL_NM_5=  ? and   UIR_VAL_5=  ? and   UIR_TBL_NM_6=  ? and   UIR_COL_NM_6=  ? and   UIR_VAL_6=  ?
+                and   UIR_TBL_NM_7=  ? and   UIR_COL_NM_7=  ? and   UIR_VAL_7=  ? and   UIR_TBL_NM_8=  ? and   UIR_COL_NM_8=  ? and   UIR_VAL_8=  ? and  
+                UIR_TBL_NM_9=  ? and   UIR_COL_NM_9=  ? and   UIR_VAL_9 =  ? """.format(env = env)
+       
         for row in range(2,rows+1):
-            sql = """Delete from "{env}"."PUBLIC"."ENT_LKUP_DATA" where """.format(env = env)
+            val = []
             for col in range(1,33):
                 char = get_column_letter(col)
-                if(col == 1):
-                    sql = sql + column_headers[col-1] + " = '" + str(sheet_choosed[char + str(row)].value).strip() + "' and "
-                elif(col != 32 and (sheet_choosed[char + str(row)].value == None or sheet_choosed[char + str(row)].value == ' ' or sheet_choosed[char + str(row)].value == '' or
-                   str(sheet_choosed[char + str(row)].value).upper() == 'NULL')):
-                    sql = sql + column_headers[col-1] + " = " + "'NULL'" + " and "
-                elif(col == 32 and (sheet_choosed[char + str(row)].value == None or sheet_choosed[char + str(row)].value == ' ' or sheet_choosed[char + str(row)].value == '' or
-                   str(sheet_choosed[char + str(row)].value).upper() == 'NULL')):
-                    sql = sql + column_headers[col-1] + " = " + "'NULL'" + ";"
-                elif(col == 32):
-                    sql = sql + column_headers[col-1] + " = '" + str(sheet_choosed[char + str(row)].value).strip() + ";"
-                else:
-                    sql = sql + column_headers[col-1] + " = '" + str(sheet_choosed[char + str(row)].value).strip() + "' and " 
+                if(sheet_choosed[char + str(row)].value == None or sheet_choosed[char + str(row)].value == ' ' or sheet_choosed[char + str(row)].value == '' or
+                   str(sheet_choosed[char + str(row)].value).upper() == 'NULL'):
+                    val.append("NULL")
+                elif(col != 32):
+                    st = str(sheet_choosed[char + str(row)].value).strip()
+                    val.append(st) 
 
             try:
                 
-                if(check_data_before_modifying(env,sql,"DELETE") == False):
+                if(check_data_before_modifying(env,val) == False):
                     skipped = skipped + 1
                     warn = "Skipped {skipped} row. Record does not exist in table".format(skipped = skipped)
                     update_table_button_error_display.config(fg= "red")
@@ -284,22 +277,17 @@ def delete_from_table(env):
                     update_frame.update()
                     sheet_choosed['A'+str(row)].fill = PatternFill("solid", start_color="FFFF0000")
                 else:
-                    cursor.execute(sql)
-                    cnxn.commit()
+                    values.append(val)
                     counter = counter + 1
-                    txt = "Deleted {counter} row from {env}.ENT_LKUP_DATA.....".format(counter = counter, env = env)
+                    txt = "Deleting {counter} row from {env}.ENT_LKUP_DATA.....".format(counter = counter, env = env)
                     update_table_button_output.set(txt)
                     sheet_choosed['A'+str(row)].fill = PatternFill(fill_type=None,start_color="FFFFFF")
                     update_frame.update()
+
                 total = skipped + counter
                 percent_complete = (float)((total/(rows-1))*100)
                 percent_complete = float("{:.2f}".format(percent_complete))
-                if(total == rows-1):
-                    msg = "Update Complete...{per}% done".format(per = percent_complete)
-                    update_table_button_percent.set(msg)
-                    update_table_button_percent_display.config( fg= "green")
-                    update_frame.update()
-                else:
+                if(total != rows-1):
                     msg = "Updating ENT_LKUP_DATA...{per}% done".format(per = percent_complete)
                     update_table_button_percent.set(msg)
                     update_table_button_percent_display.config( fg= "blue")
@@ -310,6 +298,20 @@ def delete_from_table(env):
                 wbook.save(file_name)
                 update_table_button_output.set("Error Occured. Validate your Data")
                 return
+        try:
+            if(total == rows-1):
+                msg = "Update Complete...100% done"
+                update_table_button_percent.set(msg)
+                update_table_button_percent_display.config( fg= "green")
+                update_frame.update()
+            cursor.executemany(sql, values)
+            cnxn.commit()
+            
+        except:
+            cnxn.rollback()
+
+
+
         wbook.save(file_name)
     except:
         pass 
