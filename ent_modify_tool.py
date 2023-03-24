@@ -404,7 +404,7 @@ test_connection_button = tk.Button(frame_a, text="Test Connection", command=test
 test_connection_button.grid(row=2, column=3)
 read_excel_button = tk.Button(frame_a, text="Read Excel file", command=select_excel_file)
 read_excel_button.grid(row=3, column=0,sticky="EW")
-# read_excel_button['state'] = 'disabled'
+read_excel_button['state'] = 'disabled'
 excel_file_label = tk.Label(frame_a, textvariable=selected_excel_file_a)
 excel_file_label.grid(row=3, column=1,sticky="EW")
 excel_file_label_a = tk.Label(frame_a, textvariable=selected_excel_file)
